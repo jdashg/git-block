@@ -5,7 +5,7 @@ import re
 import subprocess
 import sys
 
-SPEW = True
+VERBOSE = 0
 
 BASE_PREFIX = '__block_base__'
 TIP_PREFIX = '__block_tip__'
@@ -17,9 +17,21 @@ VERSION_STR = 'git-block v' + VERSION
 
 def run_git(*args):
     args = ['git'] + list(args)
-    if SPEW:
-        print '<' + ' '.join(args) + '>'
-    return subprocess.check_output(args).splitlines()
+
+    if VERBOSE >= 1:
+        print >>sys.stderr, '    <' + ' '.join(args) + '>'
+
+    try:
+        ret = subprocess.check_output(args, stderr=subprocess.STDOUT).splitlines()
+        if VERBOSE >= 2:
+            for x in ret:
+                print >>sys.stderr, '        >' + x
+        return ret
+    except subprocess.CalledProcessError as e:
+        if VERBOSE >= 1:
+            for x in e.output.splitlines():
+                print >>sys.stderr, '        !' + x
+        raise
 
 ####
 
@@ -39,8 +51,7 @@ class GitRollback():
         if not self.rollback_list:
             return # Nothing to roll back.
 
-        if SPEW:
-            print >>sys.stderr, 'Attempting rollback...'
+        print >>sys.stderr, 'Attempting rollback...'
 
         try:
             for x in reversed(self.rollback_list):
@@ -69,6 +80,17 @@ class GitRollback():
 ####
 
 def main(args):
+    global VERBOSE
+    if args:
+        if args[0] == '-v':
+            VERBOSE = 1
+            args.pop(0)
+        elif args[0] == '-vv':
+            VERBOSE = 2
+            args.pop(0)
+
+    ####
+
     cur_branch = run_git('rev-parse', '--abbrev-ref', 'HEAD')[0].strip()
 
     cur_block = None
@@ -101,7 +123,7 @@ def main(args):
 
     ####
 
-    if not len(args):
+    if not args:
         for x in sorted(blocks):
             prefix = '  '
             if x == cur_block:
@@ -109,7 +131,6 @@ def main(args):
             print prefix + x
             continue
         return 0
-
 
     cmd = args.pop(0)
     if cmd == '--version':
@@ -138,9 +159,9 @@ def main(args):
                 branch_name = type_prefix + x
                 try:
                     run_git('branch', '-D', branch_name)
-                    print >>sys.stderr, '  Deleted orphaned {} "{}"'.format(type_name, branch_name)
+                    print >>sys.stderr, 'Deleted orphaned {} "{}"'.format(type_name, branch_name)
                 except subprocess.CalledProcessError:
-                    print >>sys.stderr, '  Failed to delete orphaned {} "{}"'.format(type_name, branch_name)
+                    print >>sys.stderr, 'Failed to delete orphaned {} "{}"'.format(type_name, branch_name)
                     pass
                 continue
             return
@@ -152,7 +173,7 @@ def main(args):
 
     ####
 
-    if cmd == 'new' or cmd == '-n':
+    if cmd == 'new':
         switch_to_tip = False
         while args:
             x = args.pop(0)
@@ -175,7 +196,6 @@ def main(args):
 
         with GitRollback(cmd) as r:
             run_git('branch', base_name)
-            print str(r)
             r.add('branch', '-D', base_name)
 
             if switch_to_tip:
@@ -186,7 +206,7 @@ def main(args):
 
     ####
 
-    if cmd == 'delete' or cmd == '-d':
+    if cmd == 'delete':
         while args:
             x = args.pop(0)
             name = x
@@ -210,6 +230,34 @@ def main(args):
                 run_git('branch', '-D', TIP_PREFIX + name)
             if name in rebases:
                 run_git('branch', '-D', REBASE_PREFIX + name)
+        return 0
+
+    ####
+
+    if cmd == 'show' or cmd == 'log':
+        is_log = (cmd == 'log')
+        target = cur_block
+        while args:
+            x = args.pop(0)
+            target = x
+            break
+
+        if not target:
+            print >>sys.stderr, 'ERROR: No block is active.'
+            return 1
+
+        if target not in blocks:
+            print >>sys.stderr, 'ERROR: Unknown block "{}".'.format(target)
+            return 1
+
+        with GitRollback(cmd):
+            for x in run_git('log', '{}..{}'.format(BASE_PREFIX+target, TIP_PREFIX+target)):
+                print x
+
+            if is_log:
+                print '\n' + '=' * 47 + '\n'
+                for x in run_git('log', BASE_PREFIX+target):
+                    print x
         return 0
 
     ####
