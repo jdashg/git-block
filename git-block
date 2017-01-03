@@ -9,8 +9,7 @@ VERBOSE = 0
 
 BASE_PREFIX = '__block_base__'
 TIP_PREFIX = '__block_tip__'
-REBASE_PREFIX = '__block_rebase__'
-VERSION = '0.1'
+VERSION = '0.2'
 VERSION_STR = 'git-block v' + VERSION
 
 ####
@@ -32,6 +31,26 @@ def run_git(*args):
             for x in e.output.splitlines():
                 print >>sys.stderr, '        !' + x
         raise
+
+
+def check_error_git(*args):
+    # Different from run_git: Must allow stdout inheretance.
+    args = ['git'] + list(args)
+
+    if VERBOSE >= 1:
+        print >>sys.stderr, '    <<' + ' '.join(args) + '>>'
+
+    p = subprocess.Popen(args, stderr=subprocess.PIPE)
+    (stdoutdata, stderrdata) = p.communicate()
+    if p.returncode == 0:
+        return
+
+    if VERBOSE >= 1:
+        for x in stderrdata.splitlines():
+            print >>sys.stderr, '        !!' + x
+
+    raise subprocess.CalledProcessError(cmd=args, returncode=p.returncode,
+                                        output=stderrdata)
 
 ####
 
@@ -104,7 +123,6 @@ def main(args):
 
     bases = set()
     tips = set()
-    rebases = set()
     for x in branches:
         if x.startswith(BASE_PREFIX):
             bases.add(x[len(BASE_PREFIX):])
@@ -112,10 +130,6 @@ def main(args):
 
         if x.startswith(TIP_PREFIX):
             tips.add(x[len(TIP_PREFIX):])
-            continue
-
-        if x.startswith(REBASE_PREFIX):
-            rebases.add(x[len(REBASE_PREFIX):])
             continue
         continue
 
@@ -142,10 +156,10 @@ def main(args):
         print VERSION_STR
         print 'Commands:'
         print '  --version'
-        print '  <> | Lists blocks.'
+        print '  <> | Lists blocks'
         print '  new <name>'
         print '  delete <name>'
-        print '  <name> | Checks out a block.'
+        print '  <name> | Checks out a block'
         return 0
 
     ####
@@ -159,43 +173,57 @@ def main(args):
                 branch_name = type_prefix + x
                 try:
                     run_git('branch', '-D', branch_name)
-                    print >>sys.stderr, 'Deleted orphaned {} "{}"'.format(type_name, branch_name)
+                    print >>sys.stderr, 'Deleted orphaned {} \'{}\''.format(type_name, branch_name)
                 except subprocess.CalledProcessError:
-                    print >>sys.stderr, 'Failed to delete orphaned {} "{}"'.format(type_name, branch_name)
+                    print >>sys.stderr, 'Failed to delete orphaned {} \'{}\''.format(type_name, branch_name)
                     pass
                 continue
             return
 
         delete_orphans('base', bases, BASE_PREFIX)
         delete_orphans('tip', tips, TIP_PREFIX)
-        delete_orphans('rebase', rebases, REBASE_PREFIX)
         return 0
 
     ####
 
     if cmd == 'new':
         switch_to_tip = False
+
+        name = None
+        start_point = 'HEAD'
         while args:
             x = args.pop(0)
             if x == '-b':
                 switch_to_tip = True
                 continue
 
-            name = x
+            if not name:
+                name = x
+                continue
+
+            start_point = x
             break
         else:
-            print >>sys.stderr, 'ERROR: Not enough args.'
+            if not name:
+                print >>sys.stderr, 'ERROR: Not enough args'
+                return 1
+
+        if name == 'HEAD':
+            print >>sys.stderr, 'ERROR: Block name \'{}\' is reserved'.format(name)
             return 1
 
         if name in blocks:
-            print >>sys.stderr, 'ERROR: Block "{}" already exists.'.format(name)
+            print >>sys.stderr, 'ERROR: Block \'{}\' already exists'.format(name)
             return 1
+
+        if start_point in blocks:
+            start_point = TIP_PREFIX + start_point
 
         base_name = BASE_PREFIX + name
         tip_name = TIP_PREFIX + name
 
         with GitRollback(cmd) as r:
-            run_git('branch', base_name)
+            run_git('branch', base_name, start_point)
             r.add('branch', '-D', base_name)
 
             if switch_to_tip:
@@ -212,15 +240,15 @@ def main(args):
             name = x
             break
         else:
-            print >>sys.stderr, 'ERROR: Not enough args.'
+            print >>sys.stderr, 'ERROR: Not enough args'
             return 1
 
         if not name in blocks:
-            print >>sys.stderr, 'ERROR: Block "{}" does not exist.'.format(name)
+            print >>sys.stderr, 'ERROR: Block \'{}\' does not exist'.format(name)
             return 1
 
         if name == cur_block:
-            print >>sys.stderr, 'ERROR: Block "{}" is active.'.format(name)
+            print >>sys.stderr, 'ERROR: Block \'{}\' is active'.format(name)
             return 1
 
         with GitRollback(cmd):
@@ -228,8 +256,7 @@ def main(args):
                 run_git('branch', '-D', BASE_PREFIX + name)
             if name in tips:
                 run_git('branch', '-D', TIP_PREFIX + name)
-            if name in rebases:
-                run_git('branch', '-D', REBASE_PREFIX + name)
+        print 'Deleted block \'{}\''.format(name)
         return 0
 
     ####
@@ -243,11 +270,11 @@ def main(args):
             break
 
         if not target:
-            print >>sys.stderr, 'ERROR: No block is active.'
+            print >>sys.stderr, 'ERROR: No block is active'
             return 1
 
         if target not in blocks:
-            print >>sys.stderr, 'ERROR: Unknown block "{}".'.format(target)
+            print >>sys.stderr, 'ERROR: Unknown block \'{}\''.format(target)
             return 1
 
         with GitRollback(cmd):
@@ -263,62 +290,141 @@ def main(args):
     ####
 
     if cmd == 'rebase':
-        interactive = ''
-        while args:
-            x = args.pop(0)
-            if x == '-i':
-                interactive = x
-                continue
-            target = x
-            break
-        else:
-            print >>sys.stderr, 'ERROR: Not enough args.'
-            return 1
-
-        if not cur_block:
-            print >>sys.stderr, 'ERROR: No block is active.'
-            return 1
-
-        base_name = BASE_PREFIX + cur_block
-        tip_name = TIP_PREFIX + cur_block
-        rebase_name = REBASE_PREFIX + cur_block
-
-        if target == '--revert':
-            with GitRollback(cmd):
-                run_git('branch', '-D', base_name)
-                run_git('branch', '--move', rebase_name, base_name)
-            return 0
-
-        if target == '--confirm':
-            with GitRollback(cmd):
-                run_git('branch', '-D', rebase_name)
-            return 0
-
-        with GitRollback(cmd) as r:
-            run_git('branch', '--move', base_name, rebase_name)
-            r.add('branch', '--move', rebase_name, base_name)
-
-            new_base = target
-            if new_base in blocks:
-                new_base = TIP_PREFIX + new_base
-
-            run_git('branch', base_name, new_base)
-            r.add('branch', '-D', base_name)
-
-            run_git('rebase', interactive, '--onto', base_name, rebase_name, tip_name)
-        return 0
+        return rebase(blocks, cur_block, args)
 
     ####
 
     if cmd not in blocks:
-        print >>sys.stderr, 'ERROR: Unknown block or command "{}".'.format(cmd)
+        print >>sys.stderr, 'ERROR: Unknown block or command \'{}\''.format(cmd)
+        return 1
+    name = cmd
+
+    if name == cur_block:
+        print >>sys.stderr, 'Already on block \'{}\''.format(name)
         return 1
 
-    tip_name = TIP_PREFIX  + cmd
+    tip_name = TIP_PREFIX + name
     with GitRollback('checkout') as r:
         run_git('checkout', tip_name)
+        print 'Switched to block \'{}\''.format(name)
 
     return 0
+
+####
+
+REBASE_APPLY = os.path.join('.git', 'rebase-apply')
+REBASE_MERGE = os.path.join('.git', 'rebase-merge')
+
+def rebase(blocks, cur_block, args):
+    if os.path.exists(REBASE_APPLY):
+        return in_rebase(blocks, args, REBASE_APPLY)
+
+    if os.path.exists(REBASE_MERGE):
+        return in_rebase(blocks, args, REBASE_MERGE)
+
+    ####
+
+    interactive = ''
+    while args:
+        x = args.pop(0)
+        if x == '-i':
+            interactive = x
+            continue
+        onto = x
+        break
+    else:
+        print >>sys.stderr, 'ERROR: Not enough args'
+        return 1
+
+    if not cur_block:
+        print >>sys.stderr, 'ERROR: No block is active for rebase'
+        return 1
+
+    base_name = BASE_PREFIX + cur_block
+    tip_name = TIP_PREFIX + cur_block
+
+    if onto.startswith('-'):
+        print >>sys.stderr, 'ERROR: Invalid subcommand \'{}\''.format(target)
+        return 1
+
+    onto = onto
+    if onto in blocks:
+        onto = TIP_PREFIX + onto
+
+    try:
+        onto_rev = run_git('rev-parse', onto)[0].strip()
+    except subprocess.CalledProcessError:
+        print >>sys.stderr, 'ERROR: Bad `onto`: \'{}\''.format(onto)
+        return 1
+
+    try:
+        rebase_args = ['--onto', onto_rev, base_name, tip_name]
+        if interactive:
+            rebase_args = ['-i'] + rebase_args
+        check_error_git('rebase', *rebase_args)
+
+    except subprocess.CalledProcessError as e:
+        output_lines = e.output.splitlines()
+        for x in output_lines:
+            print >>sys.stderr, x
+
+        return 1
+
+    run_git('branch', '-f', base_name, onto_rev)
+    return 0
+
+####
+
+def in_rebase(blocks, args, rebase_dir):
+    def read_rebase_file_line(rebase_dir, file_name):
+        path = os.path.join(rebase_dir, file_name)
+        with open(path, 'r') as f:
+            line = f.readlines()[0].rstrip()
+
+        if VERBOSE >= 2:
+            print >>sys.stderr, '{}: \'{}\''.format(path, line)
+
+        return line
+
+    head_name = read_rebase_file_line(rebase_dir, 'head-name')
+    onto = read_rebase_file_line(rebase_dir, 'onto')
+
+    HEAD_NAME_PREFIX = 'refs/heads/' + TIP_PREFIX
+    assert head_name.startswith(HEAD_NAME_PREFIX)
+    cur_block = head_name[len(HEAD_NAME_PREFIX):]
+
+    if cur_block not in blocks:
+        print >>sys.stderr, 'ERROR: No block is active during current rebase'
+        return 1
+
+    ####
+
+    while args:
+        x = args.pop(0)
+        cmd = x
+        break
+    else:
+        print >>sys.stderr, 'ERROR: Not enough args'
+        return 1
+
+    if cmd == '--abort':
+        run_git('rebase', '--abort')
+        return 0
+
+    if cmd.startswith('--cont'):
+        try:
+            check_error_git('rebase', '--continue')
+            # Rebase succeeded.
+        except subprocess.CalledProcessError as e:
+            for x in e.output.splitlines():
+                print >>sys.stderr, x
+            return 1
+
+        run_git('branch', '-f', BASE_PREFIX + cur_block, onto)
+        return 0
+
+    print >>sys.stderr, 'ERROR: Unrecognized subcommand \'{}\''.format(cmd)
+    return 1
 
 ####
 
