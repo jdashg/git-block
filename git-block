@@ -33,29 +33,14 @@ def run_git(*args):
         raise
 
 
-def check_error_git(*args):
-    # Different from run_git: Must allow stdout inheretance.
+def popen_git(args, stdin=None, stdout=None, stderr=None):
     args = ['git'] + list(args)
 
     if VERBOSE >= 1:
         print >>sys.stderr, '    <<' + ' '.join(args) + '>>'
 
-    p = subprocess.Popen(args, stdout=None, stderr=subprocess.PIPE)
-    (stdoutdata, stderrdata) = p.communicate()
-    if p.returncode == 0:
-        return
-
-    if VERBOSE >= 1:
-        for x in stderrdata.splitlines():
-            print >>sys.stderr, '        !!' + x
-
-    raise subprocess.CalledProcessError(cmd=args, returncode=p.returncode,
-                                        output=stderrdata)
-
-####
-
-def get_pager():
-    return 'less' # TODO: Ask git.
+    p = subprocess.Popen(args, stdin=stdin, stdout=stdout, stderr=stderr)
+    return p
 
 ####
 
@@ -266,8 +251,7 @@ def main(args):
 
     ####
 
-    if cmd == 'show' or cmd == 'log':
-        is_log = (cmd == 'log')
+    if cmd == 'show':
         target = cur_block
         while args:
             x = args.pop(0)
@@ -282,29 +266,10 @@ def main(args):
             print >>sys.stderr, 'ERROR: Unknown block \'{}\''.format(target)
             return 1
 
-        try:
-            range_arg = '{}..{}'.format(BASE_PREFIX+target, TIP_PREFIX+target)
-            show_lines = run_git('log', range_arg)
-            show_lines.append('\n\n' + '=' * 47 + '\n\n\n')
-
-            show_data = '\n'.join(show_lines)
-
-            pager = get_pager()
-            p_pager = subprocess.Popen(pager, stdin=subprocess.PIPE)
-            p_pager.stdin.write(show_data)
-            assert p_pager.returncode == None
-
-            log_args = ['git', '--no-pager', 'log', BASE_PREFIX+target]
-            p_log = subprocess.Popen(log_args, stdout=p_pager.stdin)
-            p_log.communicate()
-            assert p_log.returncode != None
-
-            p_pager.wait()
-            assert p_pager.returncode != None
-        except subprocess.CalledProcessError as e:
-            print >>sys.stderr, 'ERROR: {} failed: {}'.format(cmd, e)
-            return 1
-        return 0
+        range_arg = '{}..{}'.format(BASE_PREFIX+target, TIP_PREFIX+target)
+        p = popen_git(('--no-pager', 'log', range_arg))
+        p.communicate()
+        return p.returncode
 
     ####
 
@@ -376,18 +341,14 @@ def rebase(blocks, cur_block, args):
         print >>sys.stderr, 'ERROR: Bad `onto`: \'{}\''.format(onto)
         return 1
 
-    try:
-        rebase_args = ['--onto', onto_rev, base_name, tip_name]
-        if interactive:
-            rebase_args = ['-i'] + rebase_args
-        check_error_git('rebase', *rebase_args)
+    rebase_args = ['rebase', '--onto', onto_rev, base_name, tip_name]
+    if interactive:
+        rebase_args[1:1] = ['-i']
 
-    except subprocess.CalledProcessError as e:
-        output_lines = e.output.splitlines()
-        for x in output_lines:
-            print >>sys.stderr, x
-
-        return 1
+    p = popen_git(rebase_args)
+    p.wait()
+    if p.returncode != 0:
+        return p.returncode
 
     run_git('branch', '-f', base_name, onto_rev)
     return 0
@@ -431,12 +392,9 @@ def in_rebase(blocks, args, rebase_dir):
         return 0
 
     if cmd.startswith('--cont'):
-        try:
-            check_error_git('rebase', '--continue')
-            # Rebase succeeded.
-        except subprocess.CalledProcessError as e:
-            for x in e.output.splitlines():
-                print >>sys.stderr, x
+        p = popen_git(('rebase', '--continue'))
+        p.communicate()
+        if p.returncode != 0:
             return 1
 
         run_git('branch', '-f', BASE_PREFIX + cur_block, onto)
