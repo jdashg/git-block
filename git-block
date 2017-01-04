@@ -285,8 +285,7 @@ def main(args):
         try:
             range_arg = '{}..{}'.format(BASE_PREFIX+target, TIP_PREFIX+target)
             show_lines = run_git('log', range_arg)
-            show_lines.append('=' * 47)
-            show_lines.append('')
+            show_lines.append('\n\n' + '=' * 47 + '\n\n\n')
 
             show_data = '\n'.join(show_lines)
 
