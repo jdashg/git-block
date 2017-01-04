@@ -273,6 +273,26 @@ def main(args):
 
     ####
 
+    if cmd == 'base':
+        target = cur_block
+        while args:
+            x = args.pop(0)
+            target = x
+            break
+
+        if not target:
+            print >>sys.stderr, 'ERROR: No block is active'
+            return 1
+
+        if target not in blocks:
+            print >>sys.stderr, 'ERROR: Unknown block \'{}\''.format(target)
+            return 1
+
+        print BASE_PREFIX+target
+        return 0
+
+    ####
+
     if cmd == 'rebase':
         return rebase(blocks, cur_block, args)
 
