@@ -40,7 +40,7 @@ def check_error_git(*args):
     if VERBOSE >= 1:
         print >>sys.stderr, '    <<' + ' '.join(args) + '>>'
 
-    p = subprocess.Popen(args, stderr=subprocess.PIPE)
+    p = subprocess.Popen(args, stdout=None, stderr=subprocess.PIPE)
     (stdoutdata, stderrdata) = p.communicate()
     if p.returncode == 0:
         return
@@ -51,6 +51,11 @@ def check_error_git(*args):
 
     raise subprocess.CalledProcessError(cmd=args, returncode=p.returncode,
                                         output=stderrdata)
+
+####
+
+def get_pager():
+    return 'less' # TODO: Ask git.
 
 ####
 
@@ -277,14 +282,29 @@ def main(args):
             print >>sys.stderr, 'ERROR: Unknown block \'{}\''.format(target)
             return 1
 
-        with GitRollback(cmd):
-            for x in run_git('log', '{}..{}'.format(BASE_PREFIX+target, TIP_PREFIX+target)):
-                print x
+        try:
+            range_arg = '{}..{}'.format(BASE_PREFIX+target, TIP_PREFIX+target)
+            show_lines = run_git('log', range_arg)
+            show_lines.append('=' * 47)
+            show_lines.append('')
 
-            if is_log:
-                print '\n' + '=' * 47 + '\n'
-                for x in run_git('log', BASE_PREFIX+target):
-                    print x
+            show_data = '\n'.join(show_lines)
+
+            pager = get_pager()
+            p_pager = subprocess.Popen(pager, stdin=subprocess.PIPE)
+            p_pager.stdin.write(show_data)
+            assert p_pager.returncode == None
+
+            log_args = ['git', '--no-pager', 'log', BASE_PREFIX+target]
+            p_log = subprocess.Popen(log_args, stdout=p_pager.stdin)
+            p_log.communicate()
+            assert p_log.returncode != None
+
+            p_pager.wait()
+            assert p_pager.returncode != None
+        except subprocess.CalledProcessError as e:
+            print >>sys.stderr, 'ERROR: {} failed: {}'.format(cmd, e)
+            return 1
         return 0
 
     ####
