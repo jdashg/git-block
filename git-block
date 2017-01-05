@@ -353,11 +353,7 @@ def rebase(blocks, cur_block, args):
         if onto in blocks:
             onto = TIP_PREFIX + onto
 
-        try:
-            run_git('rev-parse', onto)[0].strip() # Just validate it.
-        except subprocess.CalledProcessError:
-            print >>sys.stderr, 'ERROR: Bad `onto`: \'{}\''.format(onto)
-            return 1
+        break
     else:
         if not interactive:
             print >>sys.stderr, 'ERROR: Not enough args'
@@ -365,7 +361,14 @@ def rebase(blocks, cur_block, args):
 
         onto = base_name
 
-    rebase_args = ['rebase', '--onto', onto, base_name, tip_name]
+
+    try:
+        onto_rev = run_git('rev-parse', onto)[0].strip() # Validate and save for later.
+    except subprocess.CalledProcessError:
+        print >>sys.stderr, 'ERROR: Bad `onto`: \'{}\''.format(onto)
+        return 1
+
+    rebase_args = ['rebase', '--onto', onto, base_name, tip_name] # Don't need onto_rev here.
     if interactive:
         rebase_args[1:1] = ['-i']
 
