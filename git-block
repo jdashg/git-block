@@ -328,18 +328,6 @@ def rebase(blocks, cur_block, args):
 
     ####
 
-    interactive = ''
-    while args:
-        x = args.pop(0)
-        if x == '-i':
-            interactive = x
-            continue
-        onto = x
-        break
-    else:
-        print >>sys.stderr, 'ERROR: Not enough args'
-        return 1
-
     if not cur_block:
         print >>sys.stderr, 'ERROR: No block is active for rebase'
         return 1
@@ -347,21 +335,37 @@ def rebase(blocks, cur_block, args):
     base_name = BASE_PREFIX + cur_block
     tip_name = TIP_PREFIX + cur_block
 
-    if onto.startswith('-'):
-        print >>sys.stderr, 'ERROR: Invalid subcommand \'{}\''.format(target)
-        return 1
+    ####
 
-    onto = onto
-    if onto in blocks:
-        onto = TIP_PREFIX + onto
+    interactive = False
+    while args:
+        x = args.pop(0)
+        if x == '-i':
+            interactive = True
+            continue
 
-    try:
-        onto_rev = run_git('rev-parse', onto)[0].strip()
-    except subprocess.CalledProcessError:
-        print >>sys.stderr, 'ERROR: Bad `onto`: \'{}\''.format(onto)
-        return 1
+        onto = x
 
-    rebase_args = ['rebase', '--onto', onto_rev, base_name, tip_name]
+        if onto.startswith('-'):
+            print >>sys.stderr, 'ERROR: Invalid subcommand \'{}\''.format(target)
+            return 1
+
+        if onto in blocks:
+            onto = TIP_PREFIX + onto
+
+        try:
+            run_git('rev-parse', onto)[0].strip() # Just validate it.
+        except subprocess.CalledProcessError:
+            print >>sys.stderr, 'ERROR: Bad `onto`: \'{}\''.format(onto)
+            return 1
+    else:
+        if not interactive:
+            print >>sys.stderr, 'ERROR: Not enough args'
+            return 1
+
+        onto = base_name
+
+    rebase_args = ['rebase', '--onto', onto, base_name, tip_name]
     if interactive:
         rebase_args[1:1] = ['-i']
 
