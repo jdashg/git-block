@@ -273,7 +273,7 @@ def main(args):
 
     ####
 
-    if cmd == 'base':
+    if cmd == 'base' or cmd == 'tip':
         target = cur_block
         while args:
             x = args.pop(0)
@@ -288,8 +288,22 @@ def main(args):
             print >>sys.stderr, 'ERROR: Unknown block \'{}\''.format(target)
             return 1
 
-        print BASE_PREFIX+target
+        if cmd == 'base':
+            print BASE_PREFIX+target
+        else:
+            print TIP_PREFIX+target
         return 0
+
+    ####
+
+    if cmd == 'mozreview':
+        if not cur_block:
+            print >>sys.stderr, 'ERROR: No block is active'
+            return 1
+
+        p = popen_git(('mozreview', 'push', BASE_PREFIX+cur_block + '..'))
+        p.communicate()
+        return p.returncode
 
     ####
 
@@ -337,11 +351,11 @@ def rebase(blocks, cur_block, args):
 
     ####
 
-    interactive = False
     while args:
         x = args.pop(0)
-        if x == '-i':
-            interactive = True
+        absorb_already_applied = False
+        if x == '-a':
+            absorb_already_applied = True
             continue
 
         onto = x
@@ -355,7 +369,7 @@ def rebase(blocks, cur_block, args):
 
         break
     else:
-        if not interactive:
+        if absorb_already_applied:
             print >>sys.stderr, 'ERROR: Not enough args'
             return 1
 
@@ -369,7 +383,7 @@ def rebase(blocks, cur_block, args):
         return 1
 
     rebase_args = ['rebase', '--onto', onto, base_name, tip_name] # Don't need onto_rev here.
-    if interactive:
+    if not absorb_already_applied:
         rebase_args[1:1] = ['-i']
 
     p = popen_git(rebase_args)
