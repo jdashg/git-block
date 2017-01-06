@@ -351,9 +351,9 @@ def rebase(blocks, cur_block, args):
 
     ####
 
+    absorb_already_applied = False
     while args:
         x = args.pop(0)
-        absorb_already_applied = False
         if x == '-a':
             absorb_already_applied = True
             continue
