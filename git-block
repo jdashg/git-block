@@ -330,15 +330,25 @@ def main(args):
 
 ####
 
-REBASE_APPLY = os.path.join('.git', 'rebase-apply')
-REBASE_MERGE = os.path.join('.git', 'rebase-merge')
-
 def rebase(blocks, cur_block, args):
-    if os.path.exists(REBASE_APPLY):
-        return in_rebase(blocks, args, REBASE_APPLY)
+    git_dir = '.git'
+    assert os.path.exists(git_dir)
 
-    if os.path.exists(REBASE_MERGE):
-        return in_rebase(blocks, args, REBASE_MERGE)
+    if os.path.isfile(git_dir):
+        with open(git_dir) as f:
+            git_dir = f.readlines()[0].strip()
+        (_, git_dir) = git_dir.split('gitdir: ', 1)
+        git_dir = os.path.normpath(git_dir)
+
+    assert os.path.exists(git_dir)
+
+    rebase_dir = os.path.join(git_dir, 'rebase-apply')
+    if os.path.exists(rebase_dir):
+        return in_rebase(blocks, args, rebase_dir)
+
+    rebase_dir = os.path.join(git_dir, 'rebase-merge')
+    if os.path.exists(rebase_dir):
+        return in_rebase(blocks, args, rebase_dir)
 
     ####
 
