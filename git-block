@@ -242,10 +242,10 @@ def main(args):
             return 1
 
         with GitRollback(cmd):
-            if name in bases:
-                run_git('branch', '-D', BASE_PREFIX + name)
             if name in tips:
                 run_git('branch', '-D', TIP_PREFIX + name)
+            if name in bases:
+                run_git('branch', '-D', BASE_PREFIX + name)
         print 'Deleted block \'{}\''.format(name)
         return 0
 
