@@ -83,6 +83,9 @@ class GitRollback():
             return # Pass it on.
 
         print >>sys.stderr, 'ERROR: `{}` failed:'.format(self.cmd_name)
+        for x in ex_val.output.splitlines():
+            print >>sys.stderr, x
+
         self.rollback(ex_val)
         exit(1)
 
