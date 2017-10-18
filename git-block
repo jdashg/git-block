@@ -7,9 +7,9 @@ import sys
 
 VERBOSE = 0
 
-BASE_PREFIX = '__block_base__'
-TIP_PREFIX = '__block_tip__'
-VERSION = '0.2'
+BASE_PREFIX = '_bb_'
+TIP_PREFIX = '_bt_'
+VERSION = '1.0'
 VERSION_STR = 'git-block v' + VERSION
 
 ####
@@ -33,14 +33,17 @@ def run_git(*args):
         raise
 
 
-def popen_git(args, stdin=None, stdout=None, stderr=None):
-    args = ['git'] + list(args)
-
+def popen_args(p_args, **kwargs):
     if VERBOSE >= 1:
-        print >>sys.stderr, '    <<' + ' '.join(args) + '>>'
+        print >>sys.stderr, '    <<' + ' '.join(p_args) + '>>'
 
-    p = subprocess.Popen(args, stdin=stdin, stdout=stdout, stderr=stderr)
+    p = subprocess.Popen(p_args, **kwargs)
     return p
+
+
+def popen_git(args):
+    args = ['git'] + list(args)
+    return popen_args(args)
 
 ####
 
@@ -305,6 +308,18 @@ def main(args):
             return 1
 
         p = popen_git(('mozreview', 'push', BASE_PREFIX+cur_block + '..'))
+        p.communicate()
+        return p.returncode
+    ####
+
+    if cmd == 'try':
+        if cur_block:
+            info = 'BLOCK=\'{}\''.format(cur_block)
+        else:
+            info = 'BRANCH=\'{}\''.format(cur_branch)
+
+        # e.g.: --setenv REASON='Bisect m5 failure'
+        p = popen_args(['python2', 'mach', 'try'] + args + ['--setenv', info])
         p.communicate()
         return p.returncode
 
