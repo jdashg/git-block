@@ -314,9 +314,9 @@ def main(args):
 
     if cmd == 'try':
         if cur_block:
-            info = 'BLOCK=\'{}\''.format(cur_block)
+            info = 'BLOCK={}'.format(cur_block)
         else:
-            info = 'BRANCH=\'{}\''.format(cur_branch)
+            info = 'BRANCH={}'.format(cur_branch)
 
         # e.g.: --setenv REASON='Bisect m5 failure'
         p = popen_args(['python2', 'mach', 'try'] + args + ['--setenv', info])
